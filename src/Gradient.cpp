@@ -84,6 +84,7 @@ constexpr std::string_view gradient_attrs_name[GRADIENT_ATTR_COUNT] = {
   "id", 
   "gradientUnits",
   "gradientTransform",
+  "spreadMethod",
 };
 
 constexpr InverseIndex<GRADIENT_ATTR_COUNT> inv_gradient_attribute {&gradient_attrs_name};

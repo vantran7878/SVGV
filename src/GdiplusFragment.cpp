@@ -300,53 +300,208 @@ static std::unique_ptr<const Gdiplus::Brush> paint_to_brush(Paint paint, double 
           for (size_t i = 0; i < 4; ++i) {
             add_bezier_transformed(&path, brush_curve[i], shape->transform);
           }
+
+          //------------make brush--------------
           std::unique_ptr<Gdiplus::PathGradientBrush> brush = std::make_unique<Gdiplus::PathGradientBrush>(&path);
           brush->SetCenterPoint(Gdiplus::PointF{(Gdiplus::REAL)f[0], (Gdiplus::REAL)f[1]});
 
+          //--------------spreadMethod------------------
+          std::deque<Gdiplus::REAL>iter_positions;
+          std::deque<Gdiplus::Color>colors;
 
+          //--reverse offset after spread method
+          for (size_t i = 0; i < stop_count; ++i) {
+            colors.emplace_back(Gdiplus::Color{
+              (BYTE)(gradient->stops[i].stop_opacity * opacity * 255),
+              (BYTE)(gradient->stops[i].stop_color.r * 255),
+              (BYTE)(gradient->stops[i].stop_color.g * 255),
+              (BYTE)(gradient->stops[i].stop_color.b * 255),
+            });
+            iter_positions.emplace_back((Gdiplus::REAL)((gradient->stops[i].offset) * min_r / max_r));
+          }
 
-          iter_positions[0] = 0.0f;
+          std::cout << "offset init\n";
+          for (size_t i = 0; i < iter_positions.size(); ++i) {
+            std::cout << iter_positions[i] << ' ';
+          }
+          std::cout << '\n';
+
           switch (gradient->spreadmethod) {
             case SPREADMETHOD_PAD: {
-              std::unique_ptr<Gdiplus::Color[]> colors = std::make_unique<Gdiplus::Color[]>(stop_count + 2);
-              std::unique_ptr<Gdiplus::REAL[]> iter_positions = std::make_unique<Gdiplus::REAL[]>(stop_count + 2);
-              for (size_t i = 0; i < stop_count; ++i) {
-                colors[i + 1] = Gdiplus::Color{
-                  (BYTE)(gradient->stops[stop_count - i - 1].stop_opacity * opacity * 255),
-                  (BYTE)(gradient->stops[stop_count - i - 1].stop_color.r * 255),
-                  (BYTE)(gradient->stops[stop_count - i - 1].stop_color.g * 255),
-                  (BYTE)(gradient->stops[stop_count - i - 1].stop_color.b * 255),
-                };
-                iter_positions[i + 1] = (Gdiplus::REAL)((1 - ((gradient->stops[stop_count - i - 1].offset) * min_r / max_r)));
-              }
-              iter_positions[0] = 0.0f;
-
-              colors[0] = Gdiplus::Color {
-                (BYTE)(gradient->stops[stop_count - 1].stop_opacity * opacity * 255),
-                (BYTE)(gradient->stops[stop_count - 1].stop_color.r * 255),
-                (BYTE)(gradient->stops[stop_count - 1].stop_color.g * 255),
-                (BYTE)(gradient->stops[stop_count - 1].stop_color.b * 255),
-              };
-              colors[stop_count + 1] =  Gdiplus::Color{
+              iter_positions.emplace_front((Gdiplus::REAL)0);
+              colors.emplace_back(Gdiplus::Color {
                 (BYTE)(gradient->stops[0].stop_opacity * opacity * 255),
                 (BYTE)(gradient->stops[0].stop_color.r * 255),
                 (BYTE)(gradient->stops[0].stop_color.g * 255),
                 (BYTE)(gradient->stops[0].stop_color.b * 255),
-              };
+              });
 
-              iter_positions[stop_count + 1] = 1.0f;
+              iter_positions.emplace_back(1.0f);
+              colors.emplace_back(Gdiplus::Color{
+                (BYTE)(gradient->stops[stop_count - 1].stop_opacity * opacity * 255),
+                (BYTE)(gradient->stops[stop_count - 1].stop_color.r * 255),
+                (BYTE)(gradient->stops[stop_count - 1].stop_color.g * 255),
+                (BYTE)(gradient->stops[stop_count - 1].stop_color.b * 255),
+              });
               stop_count += 2;
-              brush->SetInterpolationColors(colors.get(), iter_positions.get(), (INT)stop_count);
             } break; 
+
             case SPREADMETHOD_REFLECT: {
-              int repeat = std::ceil((max_r - min_r) / min_r);
-              int new_offset = stop_count + repeat * stop_count;
+              int offset_index = 0;
+              //while for previous
+              while(iter_positions.front() > 0) {
+                double this_offset = iter_positions[offset_index % stop_count];
+                double next_offset = iter_positions[(offset_index + 1) % stop_count];
+                double gap = next_offset - this_offset;
+                
+                double pre_offset = this_offset - gap;
+
+                if (pre_offset <= 0) {
+                  iter_positions.emplace_front((Gdiplus::REAL)0);
+                  double new_gap = this_offset - 0;
+                  colors.emplace_front(Gdiplus::Color {
+                   (BYTE)(colors[next_offset].GetA() * new_gap / gap),
+                   (BYTE)(colors[next_offset].GetR() * new_gap / gap),
+                   (BYTE)(colors[next_offset].GetG() * new_gap / gap),
+                   (BYTE)(colors[next_offset].GetB() * new_gap / gap)
+                  });
+                } else {
+                  iter_positions.emplace_front((Gdiplus::REAL)pre_offset);
+                  colors.emplace_front(Gdiplus::Color {
+                   (BYTE)((double)colors[next_offset].GetA()),
+                   (BYTE)((double)colors[next_offset].GetR()),
+                   (BYTE)((double)colors[next_offset].GetG()),
+                   (BYTE)((double)colors[next_offset].GetB())
+                  });
+                }
+                --offset_index;
+              }
+
+                //while for afterward
+              offset_index = stop_count - 1;
+              while(iter_positions.back() < 1) {
+                double this_offset = iter_positions[offset_index % stop_count];
+                double pre_offset = iter_positions[(offset_index - 1) % stop_count];
+                double gap = this_offset - pre_offset;
+                
+                double next_offset = this_offset + gap;
+
+                if (next_offset >= 1) {
+                  iter_positions.emplace_back((Gdiplus::REAL)1);
+
+                  double new_gap = 1 - this_offset;
+                  colors.emplace_back(Gdiplus::Color {
+                   (BYTE)((double)colors[pre_offset].GetA() * new_gap / gap),
+                   (BYTE)((double)colors[pre_offset].GetR() * new_gap / gap),
+                   (BYTE)((double)colors[pre_offset].GetG() * new_gap / gap),
+                   (BYTE)((double)colors[pre_offset].GetB() * new_gap / gap)
+                  });
+                } else {
+                  iter_positions.emplace_front((Gdiplus::REAL)next_offset);
+                  colors.emplace_back(Gdiplus::Color {
+                   (BYTE)((double)colors[pre_offset].GetA()),
+                   (BYTE)((double)colors[pre_offset].GetR()),
+                   (BYTE)((double)colors[pre_offset].GetG()),
+                   (BYTE)((double)colors[pre_offset].GetB())
+                  });
+                }
+                ++offset_index;
+              }
                
             } break;
+
+            case SPREADMETHOD_REPEAT: {
+              int offset_index = 0;
+              //while for previous
+              while(iter_positions.front() > 0) {
+                double this_offset = iter_positions[offset_index % stop_count];
+                double next_offset = iter_positions[(offset_index + 1) % stop_count];
+                double gap = next_offset - this_offset;
+                
+                double pre_offset = this_offset - gap;
+
+                if (pre_offset <= 0) {
+                  iter_positions.emplace_front((Gdiplus::REAL)0);
+                  double new_gap = this_offset - 0;
+                  colors.emplace_front(Gdiplus::Color {
+                   (BYTE)((double)colors[(offset_index - 1) % stop_count].GetA() * new_gap / gap),
+                   (BYTE)((double)colors[(offset_index - 1) % stop_count].GetR() * new_gap / gap),
+                   (BYTE)((double)colors[(offset_index - 1) % stop_count].GetG() * new_gap / gap),
+                   (BYTE)((double)colors[(offset_index - 1) % stop_count].GetB() * new_gap / gap)
+                  });
+                } else {
+                  iter_positions.emplace_front((Gdiplus::REAL)pre_offset);
+                  colors.emplace_front(Gdiplus::Color {
+                   (BYTE)((double)colors[(offset_index - 1) % stop_count].GetA()),
+                   (BYTE)((double)colors[(offset_index - 1) % stop_count].GetR()),
+                   (BYTE)((double)colors[(offset_index - 1) % stop_count].GetG()),
+                   (BYTE)((double)colors[(offset_index - 1) % stop_count].GetB())
+                  });
+                }
+                --offset_index;
+              }
+
+                //while for afterward
+              offset_index = stop_count - 1;
+              while(iter_positions.back() < 1) {
+                double this_offset = iter_positions[offset_index % stop_count];
+                double pre_offset = iter_positions[(offset_index - 1) % stop_count];
+                double gap = this_offset - pre_offset;
+                
+                double next_offset = this_offset + gap;
+
+                if (next_offset >= 1) {
+                  iter_positions.emplace_back((Gdiplus::REAL)1);
+
+                  double new_gap = 1 - this_offset;
+                  colors.emplace_back(Gdiplus::Color {
+                   (BYTE)(colors[(offset_index + 1) % stop_count].GetA() * new_gap / gap),
+                   (BYTE)(colors[(offset_index + 1) % stop_count].GetR() * new_gap / gap),
+                   (BYTE)(colors[(offset_index + 1) % stop_count].GetG() * new_gap / gap),
+                   (BYTE)(colors[(offset_index + 1) % stop_count].GetB() * new_gap / gap)
+                  });
+                } else {
+                  iter_positions.emplace_front((Gdiplus::REAL)next_offset);
+
+                  colors.emplace_back(Gdiplus::Color {
+                   (BYTE)(colors[(offset_index - 1) % stop_count].GetA()),
+                   (BYTE)(colors[(offset_index - 1) % stop_count].GetR()),
+                   (BYTE)(colors[(offset_index - 1) % stop_count].GetG()),
+                   (BYTE)(colors[(offset_index - 1) % stop_count].GetB())
+                  });
+                }
+                ++offset_index;
+              }
+            } break;
+
+            case SPREADMETHOD_COUNT: {
+              __builtin_unreachable();
+            }
                              
           }
 
+          INT offset_count = iter_positions.size();
 
+          //--reverse and -1
+          for (int i = 0; i < offset_count; ++i) {
+            iter_positions[i] = 1 - iter_positions[offset_count - i - 1];
+            //colors[i] = colbuors[offset_count - i - 1];
+          }
+
+
+          std::cout << "offset new\n";
+          for (int i = 0; i < offset_count; ++i) {
+            std::cout << iter_positions[i] << ' ';
+          }
+          std::cout << '\n';
+
+          std::unique_ptr<Gdiplus::REAL[]> offset_positions = std::make_unique<Gdiplus::REAL[]>(offset_count);
+          std::copy(iter_positions.begin(), iter_positions.end(), offset_positions.get());
+
+          std::unique_ptr<Gdiplus::Color[]> offset_colors = std::make_unique<Gdiplus::Color[]>(offset_count);
+          std::copy(colors.begin(), colors.end(), offset_colors.get());
+
+          brush->SetInterpolationColors(offset_colors.get(), offset_positions.get(), (INT)offset_count);
           return brush;
         } break;
         case GRADIENT_TYPE_COUNT: {
