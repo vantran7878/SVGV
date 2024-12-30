@@ -76,6 +76,7 @@ enum GradientAttribute {
   GRADIENT_ATTR_ID = 0,
   GRADIENT_ATTR_UNITS,
   GRADIENT_ATTR_TRANSFORM,
+  GRADIENT_ATTR_SPREADMETHOD,
   GRADIENT_ATTR_COUNT,
 };
 
@@ -86,6 +87,14 @@ constexpr std::string_view gradient_attrs_name[GRADIENT_ATTR_COUNT] = {
 };
 
 constexpr InverseIndex<GRADIENT_ATTR_COUNT> inv_gradient_attribute {&gradient_attrs_name};
+
+constexpr std::string_view spreadmethod_name[SPREADMETHOD_COUNT] = {
+  "pad",
+  "reflect",
+  "repeat",
+};
+
+constexpr InverseIndex<SPREADMETHOD_COUNT> inv_spreadmethod {&spreadmethod_name};
 
 static RadialGradient read_radial_gradient(Attribute *attrs, int attribute_count) {
   RadialGradient result;
@@ -155,6 +164,7 @@ Gradient read_gradient(GradientType type, Attribute *attrs, int attribute_count)
 
   result.transform = Transform::identity();
   result.gradient_units = GRADIENT_UNIT_OBJECT_BOUNDING_BOX;
+  result.spreadmethod = SPREADMETHOD_PAD;
 
   for (int i = 0; i < attribute_count; ++i) {
     std::string_view key = attrs[i].key;
@@ -174,6 +184,11 @@ Gradient read_gradient(GradientType type, Attribute *attrs, int attribute_count)
 
       case GRADIENT_ATTR_TRANSFORM: {
         result.transform = convert_transform(attrs[i].value);
+      } break;
+
+      case GRADIENT_ATTR_SPREADMETHOD: {
+        int type = inv_spreadmethod[value];
+        if (type != -1) result.spreadmethod = (SpreadMethod)type;
       } break;
 
       case GRADIENT_ATTR_COUNT: {

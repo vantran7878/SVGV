@@ -6,6 +6,7 @@
 #include <string_view>
 #include <iostream>
 #include <cmath>
+#include <deque>
 
 enum GenericFont {
   GENERIC_FONT_SERIF = 0,
@@ -208,8 +209,6 @@ static std::unique_ptr<const Gdiplus::Brush> paint_to_brush(Paint paint, double 
         case GRADIENT_TYPE_RADIAL: {
           size_t stop_count = gradient->stops.len();
 
-          std::unique_ptr<Gdiplus::Color[]> colors = std::make_unique<Gdiplus::Color[]>(stop_count + 2);
-          std::unique_ptr<Gdiplus::REAL[]> iter_positions = std::make_unique<Gdiplus::REAL[]>(stop_count + 2);
           RadialGradient radial_grad = gradient->variants.radial;
           PercentUnit p_fx = radial_grad.fx || radial_grad.cx;
           PercentUnit p_fy = radial_grad.fy || radial_grad.cy;
@@ -304,36 +303,50 @@ static std::unique_ptr<const Gdiplus::Brush> paint_to_brush(Paint paint, double 
           std::unique_ptr<Gdiplus::PathGradientBrush> brush = std::make_unique<Gdiplus::PathGradientBrush>(&path);
           brush->SetCenterPoint(Gdiplus::PointF{(Gdiplus::REAL)f[0], (Gdiplus::REAL)f[1]});
 
+
+
           iter_positions[0] = 0.0f;
+          switch (gradient->spreadmethod) {
+            case SPREADMETHOD_PAD: {
+              std::unique_ptr<Gdiplus::Color[]> colors = std::make_unique<Gdiplus::Color[]>(stop_count + 2);
+              std::unique_ptr<Gdiplus::REAL[]> iter_positions = std::make_unique<Gdiplus::REAL[]>(stop_count + 2);
+              for (size_t i = 0; i < stop_count; ++i) {
+                colors[i + 1] = Gdiplus::Color{
+                  (BYTE)(gradient->stops[stop_count - i - 1].stop_opacity * opacity * 255),
+                  (BYTE)(gradient->stops[stop_count - i - 1].stop_color.r * 255),
+                  (BYTE)(gradient->stops[stop_count - i - 1].stop_color.g * 255),
+                  (BYTE)(gradient->stops[stop_count - i - 1].stop_color.b * 255),
+                };
+                iter_positions[i + 1] = (Gdiplus::REAL)((1 - ((gradient->stops[stop_count - i - 1].offset) * min_r / max_r)));
+              }
+              iter_positions[0] = 0.0f;
 
-          colors[0] = Gdiplus::Color {
-            (BYTE)(gradient->stops[stop_count - 1].stop_opacity * opacity * 255),
-            (BYTE)(gradient->stops[stop_count - 1].stop_color.r * 255),
-            (BYTE)(gradient->stops[stop_count - 1].stop_color.g * 255),
-            (BYTE)(gradient->stops[stop_count - 1].stop_color.b * 255),
-          };
+              colors[0] = Gdiplus::Color {
+                (BYTE)(gradient->stops[stop_count - 1].stop_opacity * opacity * 255),
+                (BYTE)(gradient->stops[stop_count - 1].stop_color.r * 255),
+                (BYTE)(gradient->stops[stop_count - 1].stop_color.g * 255),
+                (BYTE)(gradient->stops[stop_count - 1].stop_color.b * 255),
+              };
+              colors[stop_count + 1] =  Gdiplus::Color{
+                (BYTE)(gradient->stops[0].stop_opacity * opacity * 255),
+                (BYTE)(gradient->stops[0].stop_color.r * 255),
+                (BYTE)(gradient->stops[0].stop_color.g * 255),
+                (BYTE)(gradient->stops[0].stop_color.b * 255),
+              };
 
-          for (size_t i = 0; i < stop_count; ++i) {
-            colors[i + 1] = Gdiplus::Color{
-              (BYTE)(gradient->stops[stop_count - i - 1].stop_opacity * opacity * 255),
-              (BYTE)(gradient->stops[stop_count - i - 1].stop_color.r * 255),
-              (BYTE)(gradient->stops[stop_count - i - 1].stop_color.g * 255),
-              (BYTE)(gradient->stops[stop_count - i - 1].stop_color.b * 255),
-            };
-            iter_positions[i + 1] = (Gdiplus::REAL)((1 - ((gradient->stops[stop_count - i - 1].offset) * min_r / max_r)));
+              iter_positions[stop_count + 1] = 1.0f;
+              stop_count += 2;
+              brush->SetInterpolationColors(colors.get(), iter_positions.get(), (INT)stop_count);
+            } break; 
+            case SPREADMETHOD_REFLECT: {
+              int repeat = std::ceil((max_r - min_r) / min_r);
+              int new_offset = stop_count + repeat * stop_count;
+               
+            } break;
+                             
           }
 
-          colors[stop_count + 1] =  Gdiplus::Color{
-            (BYTE)(gradient->stops[0].stop_opacity * opacity * 255),
-            (BYTE)(gradient->stops[0].stop_color.r * 255),
-            (BYTE)(gradient->stops[0].stop_color.g * 255),
-            (BYTE)(gradient->stops[0].stop_color.b * 255),
-          };
 
-          iter_positions[stop_count + 1] = 1.0f;
-          stop_count += 2;
-
-          brush->SetInterpolationColors(colors.get(), iter_positions.get(), (INT)stop_count);
           return brush;
         } break;
         case GRADIENT_TYPE_COUNT: {

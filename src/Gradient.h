@@ -22,6 +22,13 @@ enum GradientUnits {
   GRADIENT_UNIT_COUNT,
 };
 
+enum SpreadMethod {
+  SPREADMETHOD_PAD = 0,
+  SPREADMETHOD_REFLECT,
+  SPREADMETHOD_REPEAT,
+  SPREADMETHOD_COUNT,
+};
+
 struct LinearGradient{
   PercentUnit x1;
   PercentUnit x2;
@@ -51,6 +58,7 @@ struct Gradient {
  
   Transform transform;
   GradientUnits gradient_units;
+  SpreadMethod spreadmethod;
   std::string_view id;
   ArrayList<Stop> stops;
 };
