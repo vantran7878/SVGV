@@ -16,20 +16,19 @@ pub fn build(b: *std.Build) !void {
   // Get optimization options from the build arguments
   const optimize = b.standardOptimizeOption(.{});
 
-  const exe = b.addExecutable(.{
-    .name = "main",
+  const mod = b.createModule(.{
     .target = target,
     .optimize = optimize,
     .strip = b.release_mode != .off,
   });
 
   // Get all source files
-  var source_files = std.ArrayList([]const u8).init(b.allocator);
+  var source_files: std.ArrayList([]const u8) = .empty;
   defer {
     for (source_files.items) |item| {
       b.allocator.free(item);
     }
-    source_files.deinit();
+    source_files.deinit(b.allocator);
   }
 
   const src = "src";
@@ -40,13 +39,18 @@ pub fn build(b: *std.Build) !void {
   while (try iter.next()) |entry| {
     if (entry.kind == .file and std.mem.endsWith(u8, entry.name, "cpp")) {
       const file = try std.fs.path.join(b.allocator, &.{ src, entry.name });
-      try source_files.append(file);
+      try source_files.append(b.allocator, file);
     }
   }
 
-  exe.addCSourceFiles(.{
+  mod.addCSourceFiles(.{
     .files = source_files.items,
     .flags = &.{ "-Werror", "-Wall", "-Wextra", "-std=c++20", "-pedantic" },
+  });
+
+  const exe = b.addExecutable(.{
+    .name = "main",
+    .root_module = mod,
   });
 
   // Link with system libraries
